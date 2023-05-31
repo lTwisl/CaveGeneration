@@ -6,75 +6,115 @@ using System.Linq;
 
 public class MapGeneration : MonoBehaviour
 {
-    public int width;
-    public int height;
-    [Range(0, 100)] public int percentFill;
+    [SerializeField] private int _width;
+    [SerializeField] private int _height;
+    [SerializeField, Range(0, 100)] private int _percentFill;
 
-    public bool useRandomSeed;
-    public int seed;
+    [SerializeField] private bool _useRandomSeed;
+    [SerializeField] private int _seed;
 
-    public int iterationSmooth;
+    [SerializeField] private int _iterationSmooth;
 
-    public int minSizeRoom;
-    public int minSizeWall;
+    [SerializeField] private int _minSizeRoom;
+    [SerializeField] private int _minSizeWall;
 
-    private int[,] map;
+    [SerializeField] Player playerPrefab;
+
+    private int[,] _map;
+    Room mainRoom;
 
     private void Start()
     {
         GenerationMap();
+
+        System.Random rnd = new System.Random(DateTime.Now.ToString().GetHashCode());
+
+        for (int i = 0; i < mainRoom.cells.Count; i++)
+        {
+            int index = rnd.Next(0, mainRoom.cells.Count);
+
+            Cell cell = mainRoom.cells[index];
+
+            if (mainRoom.edgeCells.Contains(cell))
+                continue;
+
+            Vector3 Pos = new Vector3(cell.x - _width / 2, cell.y - _height / 2, 0);
+            Instantiate(playerPrefab, Pos, Quaternion.identity);
+
+            break;
+        }
     }
 
-    void GenerationMap()
+    public void GenerationMap()
     {
-        map = new int[height, width];
+        _map = new int[_height, _width];
 
         RandomFillMap();
 
-        for (int i = 0; i < iterationSmooth; i++)
+        for (int i = 0; i < _iterationSmooth; i++)
         {
             SmoothMap();
         }
 
         ProcessingMap();
+
+        int borderSize = 1;
+        int[,] borderMap = new int[_height + borderSize * 2, _width + borderSize * 2];
+
+        for (int y = 0; y < borderMap.GetLength(0); y++)
+        {
+            for (int x = 0; x < borderMap.GetLength(1); x++)
+            {
+                if (x >= borderSize && x < _width + borderSize && y >= borderSize && y < _height + borderSize)
+                {
+                    borderMap[y, x] = _map[y - borderSize, x - borderSize];
+                }
+                else
+                {
+                    borderMap[y, x] = 1;
+                }
+            }
+        }
+
+        GetComponent<MeshGenerator>().GenerationMesh(borderMap);
     }
 
     void RandomFillMap()
     {
-        if (useRandomSeed)
-            seed = Time.time.ToString().GetHashCode();
-        System.Random rnd = new System.Random(seed);
+        if (_useRandomSeed)
+            _seed = Time.time.ToString().GetHashCode();
+        System.Random rnd = new System.Random(_seed);
 
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < _height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < _width; x++)
             {
-                if (x == 0 || x == width - 1 || y == 0 || y == height - 1)
+                if (x == 0 || x == _width - 1 || y == 0 || y == _height - 1)
                 {
-                    map[y, x] = 1;
+                    _map[y, x] = 1;
                     continue;
                 }
                 
-                map[y, x] = rnd.Next(0, 100) < percentFill ? 1 : 0;
+                _map[y, x] = rnd.Next(0, 100) < _percentFill ? 1 : 0;
             }
         }
     }
 
     void SmoothMap()
     {
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < _height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < _width; x++)
             {
                 int countNeighbors = GetCountNeighbors(x, y);
 
                 if (countNeighbors < 4)
                 {
-                    map[y, x] = 0;
+                    _map[y, x] = 0;
                 }
                 else if (countNeighbors > 4)
                 {
-                    map[y, x] = 1;
+                    _map[y, x] = 1;
                 }
             }
         }
@@ -87,12 +127,12 @@ public class MapGeneration : MonoBehaviour
         {
             int sizeRegion = region.Count;
 
-            if (sizeRegion > minSizeWall)
+            if (sizeRegion > _minSizeWall)
                 continue;
 
             foreach (Cell cell in region)
             {
-                map[cell.y, cell.x] = 0;
+                _map[cell.y, cell.x] = 0;
             }
         }
 
@@ -102,22 +142,23 @@ public class MapGeneration : MonoBehaviour
         {
             int sizeRegion = region.Count;
 
-            if (sizeRegion > minSizeRoom)
+            if (sizeRegion > _minSizeRoom)
             {
-                survivingRooms.Add(new Room(region, map));
+                survivingRooms.Add(new Room(region, _map));
                 continue;
             }
 
             foreach (Cell cell in region)
             {
-                map[cell.y, cell.x] = 1;
+                _map[cell.y, cell.x] = 1;
             }
         }
 
-        survivingRooms.Sort();
-        survivingRooms[0].isAccessibleFromMainRoom = true;
-        survivingRooms[0].isMainRoom = true;
-
+        survivingRooms = survivingRooms.OrderByDescending(r => r.cells.Count).ToList();
+        mainRoom = survivingRooms[0];
+        mainRoom.isAccessibleFromMainRoom = true;
+        mainRoom.isMainRoom = true;
+        
         ConnectClosestRooms(survivingRooms);
     }
 
@@ -193,7 +234,7 @@ public class MapGeneration : MonoBehaviour
                         if (!IsInMap(x1, y1))
                             continue;
 
-                        map[y1, x1] = 0;
+                        _map[y1, x1] = 0;
                     }
                 }
             }
@@ -215,7 +256,7 @@ public class MapGeneration : MonoBehaviour
                         if (!IsInMap(x1, y1))
                             continue;
 
-                        map[y1, x1] = 0;
+                        _map[y1, x1] = 0;
                     }
                 }
             }
@@ -224,7 +265,7 @@ public class MapGeneration : MonoBehaviour
 
     Vector3 CellToWorldPoint(Cell cell)
     {
-        return new Vector3(cell.x - width / 2, cell.y - height / 2, -5);
+        return new Vector3(cell.x - _width / 2, cell.y - _height / 2, -5);
     }
 
     int GetCountNeighbors(int x, int y)
@@ -239,7 +280,7 @@ public class MapGeneration : MonoBehaviour
                     continue;
 
                 if (IsInMap(neighborsX, neighborsY))
-                    countNeighbors += map[neighborsY, neighborsX];
+                    countNeighbors += _map[neighborsY, neighborsX];
                 else
                     countNeighbors++;
             }
@@ -250,22 +291,22 @@ public class MapGeneration : MonoBehaviour
 
     bool IsInMap(int x, int y)
     {
-        return x >= 0 && x < width && y >= 0 && y < height; 
+        return x >= 0 && x < _width && y >= 0 && y < _height; 
     }
 
     List<List<Cell>> GetRegions(int cellType)
     {
         List<List<Cell>> regions = new List<List<Cell>>();
-        bool[,] mapConsideredСells = new bool[height, width]; // Карта рассмотренных ячеек
+        bool[,] mapConsideredСells = new bool[_height, _width]; // Карта рассмотренных ячеек
 
-        for (int y = 0; y < height; y++)
+        for (int y = 0; y < _height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (int x = 0; x < _width; x++)
             {
                 if (mapConsideredСells[y, x]) // Проверянные ячйки проверять не надо
                     continue;
 
-                if (map[y, x] != cellType) // Ячейки другого типа проверять не надо
+                if (_map[y, x] != cellType) // Ячейки другого типа проверять не надо
                     continue;
 
                 List<Cell> region = GetRegionCells(x, y);
@@ -285,8 +326,8 @@ public class MapGeneration : MonoBehaviour
     List<Cell> GetRegionCells(int startX, int startY)
     {
         List<Cell> cells = new List<Cell>();
-        bool[,] mapConsideredСells = new bool[height, width]; // Карта рассмотренных ячеек
-        int cellType = map[startY, startX];
+        bool[,] mapConsideredСells = new bool[_height, _width]; // Карта рассмотренных ячеек
+        int cellType = _map[startY, startX];
 
         Queue<Cell> queue = new Queue<Cell>();
         queue.Enqueue(new Cell(startX, startY));
@@ -313,7 +354,7 @@ public class MapGeneration : MonoBehaviour
                     if (mapConsideredСells[neighborsY, neighborsX]) // Проверянные ячйки проверять не надо
                         continue;
 
-                    if (map[neighborsY, neighborsX] != cellType) // Ячейки другого типа проверять не надо
+                    if (_map[neighborsY, neighborsX] != cellType) // Ячейки другого типа проверять не надо
                         continue;
 
                     mapConsideredСells[neighborsY, neighborsX] = true;
@@ -333,44 +374,6 @@ public class MapGeneration : MonoBehaviour
         }
     }
 
-    private void OnDrawGizmos()
-    {
-        if (map == null)
-            return;
-
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                Gizmos.color = map[y, x] == 1 ? Color.black : Color.white;
-                Vector3 pos = new Vector3(x - width / 2f, y - height / 2f, 0);
-                Gizmos.DrawCube(pos, Vector3.one);
-
-            }
-        }
-
-        /*List<List<Cell>> regions = GetRegions(0);
-        foreach (List<Cell> region in regions)
-        {
-            Room room = new Room(region, map);
-            //Debug.Log(room.edgeCells.Count);
-            for (int i = 0; i < room.edgeCells.Count; i++)
-            {
-                int x = room.edgeCells[i].x;
-                int y = room.edgeCells[i].y;
-                Gizmos.color = Color.blue;
-                Vector3 pos = new Vector3(x - width / 2f, y - height / 2f, 0);
-                Gizmos.DrawCube(pos, Vector3.one);
-            }
-        }
-
-        Vector3 pos1 = CellToWorldPoint(new Cell(0, 0));
-        Gizmos.DrawSphere(pos1, 0.5f);
-
-        Vector3 pos2 = CellToWorldPoint(new Cell(1, 0));
-        Gizmos.DrawSphere(pos2, 0.5f);*/
-    }
-
     struct Cell
     {
         public int x;
@@ -383,7 +386,7 @@ public class MapGeneration : MonoBehaviour
         }
     }
 
-    class Room : System.IComparable<Room>
+    class Room : IComparable<Room>
     {
         public List<Cell> cells;
         public List<Cell> edgeCells;
