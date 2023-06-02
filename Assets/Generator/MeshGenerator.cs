@@ -6,16 +6,23 @@ public class MeshGenerator : MonoBehaviour
 {
     private SquareGrid squareGrid;
 
-    private List<Vector3> vertices = new List<Vector3>();
-    private List<int> triangles = new List<int>();
+    private List<Vector3> vertices;
+    private List<int> triangles;
 
-    private Dictionary<int, List<Triangle>> triangleDictionary = new Dictionary<int, List<Triangle>>();
-    private List<List<int>> outlines = new List<List<int>>();
-    private HashSet<int> checkedVertices = new HashSet<int>();
+    private Dictionary<int, List<Triangle>> triangleDictionary;
+    private List<List<int>> outlines;
+    private HashSet<int> checkedVertices;
 
 
     public void GenerationMesh(int[,] map)
     {
+        vertices = new List<Vector3>();
+        triangles = new List<int>();
+
+        triangleDictionary = new Dictionary<int, List<Triangle>>();
+        outlines = new List<List<int>>();
+        checkedVertices = new HashSet<int>();
+
         squareGrid = new SquareGrid(map, 1);
 
         for (int y = 0; y < squareGrid.squares.GetLength(0); y++)

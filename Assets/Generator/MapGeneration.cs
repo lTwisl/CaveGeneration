@@ -18,31 +18,12 @@ public class MapGeneration : MonoBehaviour
     [SerializeField] private int _minSizeRoom;
     [SerializeField] private int _minSizeWall;
 
-    [SerializeField] Player playerPrefab;
-
     private int[,] _map;
-    Room mainRoom;
+    public int[,] Map { get { return _map; } }
 
-    private void Start()
+    private void Awake()
     {
         GenerationMap();
-
-        System.Random rnd = new System.Random(DateTime.Now.ToString().GetHashCode());
-
-        for (int i = 0; i < mainRoom.cells.Count; i++)
-        {
-            int index = rnd.Next(0, mainRoom.cells.Count);
-
-            Cell cell = mainRoom.cells[index];
-
-            if (mainRoom.edgeCells.Contains(cell))
-                continue;
-
-            Vector3 Pos = new Vector3(cell.x - _width / 2, cell.y - _height / 2, 0);
-            Instantiate(playerPrefab, Pos, Quaternion.identity);
-
-            break;
-        }
     }
 
     public void GenerationMap()
@@ -155,9 +136,8 @@ public class MapGeneration : MonoBehaviour
         }
 
         survivingRooms = survivingRooms.OrderByDescending(r => r.cells.Count).ToList();
-        mainRoom = survivingRooms[0];
-        mainRoom.isAccessibleFromMainRoom = true;
-        mainRoom.isMainRoom = true;
+        survivingRooms[0].isAccessibleFromMainRoom = true;
+        survivingRooms[0].isMainRoom = true;
         
         ConnectClosestRooms(survivingRooms);
     }
@@ -365,152 +345,139 @@ public class MapGeneration : MonoBehaviour
 
         return cells;
     }
+}
 
-    private void OnGUI()
+public struct Cell
+{
+    public int x;
+    public int y;
+
+    public Cell(int x, int y)
     {
-        if (GUI.Button(new Rect(10, 10, 100, 30), "Generate"))
+        this.x = x;
+        this.y = y;
+    }
+}
+
+public class Room
+{
+    public List<Cell> cells;
+    public List<Cell> edgeCells;
+    public int sizeRoom;
+
+    public List<Room> connectedRooms;
+
+    public bool isAccessibleFromMainRoom;
+    public bool isMainRoom;
+
+    public float distToMain;
+
+    public Room() { }
+
+    public Room(List<Cell> cells, int[,] map)
+    {
+        this.cells = cells;
+        sizeRoom = cells.Count;
+        connectedRooms = new List<Room>();
+
+        edgeCells = new List<Cell>();
+        foreach (Cell cell in cells)
         {
-            GenerationMap();
+            bool founed = false;
+            for (int neighborsY = cell.y - 1; neighborsY <= cell.y + 1; neighborsY++)
+            {
+                for (int neighborsX = cell.x - 1; neighborsX <= cell.x + 1; neighborsX++)
+                {
+                    if (neighborsX == cell.x && neighborsY == cell.y) // —омого себ€ провер€ть не надо
+                        continue;
+
+                    if (neighborsX != cell.x && neighborsY != cell.y) // ƒиагональные €чейки провер€ть не надо
+                        continue;
+
+                    if (map[neighborsY, neighborsX] == 0)
+                        continue;
+
+                    edgeCells.Add(cell);
+                    founed = true;
+                }
+                if (founed)
+                    break;
+            }
         }
     }
 
-    struct Cell
-    {
-        public int x;
-        public int y;
 
-        public Cell(int x, int y)
+    public void SetAccessibleFromMainRoom()
+    {
+        if (isAccessibleFromMainRoom)
+            return;
+
+        isAccessibleFromMainRoom = true;
+        foreach (Room room in connectedRooms)
         {
-            this.x = x;
-            this.y = y;
+            room.SetAccessibleFromMainRoom();
         }
     }
 
-    class Room : IComparable<Room>
+    public void ConnectRoom(Room otherRoom)
     {
-        public List<Cell> cells;
-        public List<Cell> edgeCells;
-        public int sizeRoom;
-
-        public List<Room> connectedRooms;
-
-        public bool isAccessibleFromMainRoom;
-        public bool isMainRoom;
-
-        public float distToMain;
-
-        public Room() { }
-
-        public Room(List<Cell> cells, int[,] map)
+        if (isAccessibleFromMainRoom)
         {
-            this.cells = cells;
-            sizeRoom = cells.Count;
-            connectedRooms = new List<Room>();
+            otherRoom.SetAccessibleFromMainRoom();
+        }
+        else if (otherRoom.isAccessibleFromMainRoom)
+        {
+            SetAccessibleFromMainRoom();
+        }
 
-            edgeCells = new List<Cell>();
-            foreach (Cell cell in cells)
+        connectedRooms.Add(otherRoom);
+        otherRoom.connectedRooms.Add(this);
+    }
+
+    public bool IsConnected(Room otherRoom)
+    {
+        return connectedRooms.Contains(otherRoom);
+    }
+
+    public float GetDistToRoom(Room other)
+    {
+        float bestDist = float.MaxValue;
+        foreach (Cell cellA in edgeCells)
+        {
+            foreach (Cell cellB in other.edgeCells)
             {
-                bool founed = false;
-                for (int neighborsY = cell.y - 1; neighborsY <= cell.y + 1; neighborsY++)
+                float distBeteeenRooms = Mathf.Pow(cellA.x - cellB.x, 2) + Mathf.Pow(cellA.y - cellB.y, 2);
+
+                if (distBeteeenRooms < bestDist)
                 {
-                    for (int neighborsX = cell.x - 1; neighborsX <= cell.x + 1; neighborsX++)
-                    {
-                        if (neighborsX == cell.x && neighborsY == cell.y) // —омого себ€ провер€ть не надо
-                            continue;
-
-                        if (neighborsX != cell.x && neighborsY != cell.y) // ƒиагональные €чейки провер€ть не надо
-                            continue;
-
-                        if (map[neighborsY, neighborsX] == 0)
-                            continue;
-
-                        edgeCells.Add(cell);
-                        founed = true;
-                    }
-                    if (founed)
-                        break;
+                    bestDist = distBeteeenRooms;
                 }
             }
         }
 
-        
-        public void SetAccessibleFromMainRoom()
+        return bestDist;
+    }
+
+    public float GetDistToRoom(Room other, out Cell bestCellA, out Cell bestCellB)
+    {
+        float bestDist = float.MaxValue;
+        bestCellA = new Cell();
+        bestCellB = new Cell();
+        foreach (Cell cellA in edgeCells)
         {
-            if (isAccessibleFromMainRoom)
-                return;
-
-            isAccessibleFromMainRoom = true;
-            foreach (Room room in connectedRooms)
+            foreach (Cell cellB in other.edgeCells)
             {
-                room.SetAccessibleFromMainRoom();
-            }
-        }
+                float distBeteeenRooms = Mathf.Pow(cellA.x - cellB.x, 2) + Mathf.Pow(cellA.y - cellB.y, 2);
 
-        public void ConnectRoom(Room otherRoom)
-        {
-            if (isAccessibleFromMainRoom)
-            {
-                otherRoom.SetAccessibleFromMainRoom();
-            }
-            else if (otherRoom.isAccessibleFromMainRoom)
-            {
-                SetAccessibleFromMainRoom();
-            }
-
-            connectedRooms.Add(otherRoom);
-            otherRoom.connectedRooms.Add(this);
-        }
-
-        public bool IsConnected(Room otherRoom)
-        {
-            return connectedRooms.Contains(otherRoom);
-        }
-
-        public float GetDistToRoom(Room other)
-        {
-            float bestDist = float.MaxValue;
-            foreach (Cell cellA in edgeCells)
-            {
-                foreach (Cell cellB in other.edgeCells)
+                if (distBeteeenRooms < bestDist)
                 {
-                    float distBeteeenRooms = Mathf.Pow(cellA.x - cellB.x, 2) + Mathf.Pow(cellA.y - cellB.y, 2);
-
-                    if (distBeteeenRooms < bestDist)
-                    {
-                        bestDist = distBeteeenRooms;
-                    }
+                    bestDist = distBeteeenRooms;
+                    bestCellA = cellA;
+                    bestCellB = cellB;
                 }
             }
-
-            return bestDist;
         }
 
-        public float GetDistToRoom(Room other, out Cell bestCellA, out Cell bestCellB)
-        {
-            float bestDist = float.MaxValue;
-            bestCellA = new Cell();
-            bestCellB = new Cell();
-            foreach (Cell cellA in edgeCells)
-            {
-                foreach (Cell cellB in other.edgeCells)
-                {
-                    float distBeteeenRooms = Mathf.Pow(cellA.x - cellB.x, 2) + Mathf.Pow(cellA.y - cellB.y, 2);
-
-                    if (distBeteeenRooms < bestDist)
-                    {
-                        bestDist = distBeteeenRooms;
-                        bestCellA = cellA;
-                        bestCellB = cellB;
-                    }
-                }
-            }
-
-            return bestDist;
-        }
-
-        public int CompareTo(Room other)
-        {
-            return sizeRoom.CompareTo(other.sizeRoom);
-        }
+        return bestDist;
     }
 }
